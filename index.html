@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Hệ thống chấm công & quản lý</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  
+  <!-- External Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chấm công">
+  <link rel="apple-touch-icon" href="https://via.placeholder.com/192x192/2563eb/ffffff?text=CC">
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin-bottom: 4px;">📋 Hệ thống quản lý & chấm công</h1>
+    <p style="font-style: italic; font-size: 12px; color: #fafafa; margin: 0; text-align: right;">
+        Version 3.2.2 - Copyright by Binh Kca</p>
+    <div id="liveClock" style="text-align:left; font-size:14px; color:#f7b206; font-weight:500; margin-top:2px; letter-spacing:0px;"></div>
+  </div>
+    
+</div>
+  <!-- Navigation -->
+  <nav class="nav">
+    <button id="tabChamCong" class="active admin-only" type="button">🕒 Chấm công</button>
+    <button id="tabThongKe" type="button">📊 Thống kê</button>
+    <button id="tabCaNhan" type="button">👤 Cá nhân</button>
+    <button id="tabQuanLy" class="admin-only" type="button">⚙️ Quản lý</button>
+    
+    <!-- Đoạn thêm dấu cho nút Update-->
+   <div class="employee-only" style="position: relative; display: inline-flex; align-items: center; margin-left: 8px;">
+    <button onclick="forceUpdateFromFirebase()" style="background:#3b82f6; color:white; border:none; border-radius:6px; padding:8px 12px; font-size:13px; font-weight: 700; cursor:pointer; display: flex; align-items: center; justify-content: center; height: 100%;">
+        🔄 Update data
+    </button>
+    <!-- Dấu chấm đỏ thông báo -->
+    <span id="updateBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; border: 2px solid #0f172a; animation: pulse 1.5s infinite;">
+        !
+    </span>
+</div>
+    <!--Kết thúc-->
+
+        <button id="adminLoginBtn" onclick="toggleAdmin()" 
+            style="margin-left:auto; padding:8px 14px; 
+                   background:#64748b; color:white; border:none; border-radius:8px; 
+                   font-size:13px; cursor:pointer; white-space:nowrap;">
+        🔐 Login
+    </button>
+  </nav>
+<div style="overflow: hidden; white-space: nowrap; margin-top: 4px; background: #0f172a; border-radius: 6px; padding: 4px 0; border: 1px solid #334155;">
+    <div id="marqueeText" style="display: inline-block; white-space: nowrap; color: #e8ec05; font-size: 13px; font-weight: bold; padding-left: 100%; animation: marquee 25s linear infinite; text-shadow: 0 0 5px rgba(251, 191, 36, 0.5);">
+        📢 Ấn update data để cập nhật dữ liệu mới.!
+    </div>
+    </div>
+  <main class="container">
+    <!-- Page: Chấm công -->
+    <section id="pageChamCong" class="card">
+      <h2>🕒 Chấm công</h2>
+      <form id="attendanceForm" autocomplete="off">
+        <label>👤 Nhân viên <span class="muted" id="selectedCount">(0 đã chọn)</span></label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="employeeInput" placeholder="Gõ tên và chọn từ danh sách gợi ý để thêm nhân viên" autocomplete="off" />
+          <input type="number" id="insertPosition" placeholder="Vị trí (trống = cuối)" min="1" style="width:150px; padding:8px; border:2px solid #d1d5db; border-radius:6px;" />
+          <div id="empAutocomplete" class="autocomplete-list"></div>
+           <button type="button" onclick="clearAllSelectedEmployees()" 
+        style="margin-top:6px; padding:6px 12px; background:#ef4444; color:white; border:none; border-radius:8px; font-size:12px; cursor:pointer;">
+            🗑 Xóa tất cả
+        </button>
+        </div>
+        <div class="selected-employees" id="selectedEmployees"></div>
+        <!--<div class="selected-hint" id="selectedHint">👆 Gõ tên và chọn từ danh sách gợi ý để thêm nhân viên</div> -->
+        <div class="row"><div class="col"><label>📅 Chọn ngày chấm công</label><input type="date" id="attDate" /></div></div>
+        <label style="margin-top:8px">🕐 Ca làm việc</label>
+        <div id="shiftGrid" class="shift-grid"></div>
+        <label style="margin-top:10px">🍚 Ăn cơm</label>
+        <div style="display:flex;gap:16px;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="eat" value="Có" checked> Có</label>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="eat" value="Không"> Không</label>
+        </div>
+        <label style="margin-top:10px">📋 Công việc</label>
+        <div id="groupsCompact" class="groups-compact"></div>
+        <label style="margin-top:10px">📝 Ghi chú <span class="muted">(không bắt buộc)</span></label>
+        <div class="note-input-wrapper">
+          <textarea id="attNote" class="note-input" placeholder="Nhập ghi chú nếu cần..." maxlength="500"></textarea>
+          <span class="note-char-count" id="noteCharCount">0/500</span>
+        </div>
+        <div class="controls">
+          <button class="btn btn-primary" type="submit">✅ Lưu</button>
+          <button class="btn btn-sm" type="button" onclick="saveAttendanceTemplate()" style="background:#10b981; color:white;">💾 Lưu mẫu</button>
+          <button class="btn btn-sm" type="button" onclick="loadAttendanceTemplate()" style="background:#f59e0b; color:white;">📂 Chọn mẫu</button>
+        </div>
+        <!-- Missing employees section -->
+        <div class="missing-emp-section open" id="missingEmpSection">
+          <div class="missing-emp-header" onclick="toggleMissingEmp()">
+            <div class="missing-emp-title">
+              <span>⚠️</span> Nhân viên chưa chấm công tháng này
+              <span class="missing-emp-count" id="missingEmpCount">0</span>
+            </div>
+            <span class="missing-emp-toggle" id="missingEmpToggle">▼</span>
+          </div>
+          <div class="missing-emp-body" id="missingEmpBody">
+            <div class="missing-emp-list" id="missingEmpList"></div>
+            <div class="missing-emp-actions">
+              <button class="btn btn-xs" onclick="refreshMissingEmp()">🔄 Làm mới</button>
+              <button class="btn btn-xs btn-primary" onclick="addAllMissingEmp()">✅ Thêm tất cả</button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- Page: Thống kê -->
+    <section id="pageThongKe" class="card" style="display:none">
+      <h2>📊 Thống kê chấm công</h2>
+      <div id="statsContent"></div>
+    </section>
+
+    <!-- Page: Cá nhân -->
+    <section id="pageCaNhan" class="card" style="display:none">
+      <h2>👤 Thông tin cá nhân</h2>
+      <div id="personalContent" class="personal-content-wrapper"></div>
+      <div style="margin-top:16px; background:white; border-radius:12px; padding:16px; border:1px solid #e5e7eb;">
+    
+    <div id="compareResult"></div>
+    <div id="personalSummary"></div>
+    <div id="personalRecords"></div>
+    
+</div>
+    </section>
+
+    <!-- Page: Quản lý -->
+    <section id="pageQuanLy" class="card" style="display:none">
+      <h2>⚙️ Quản lý</h2>
+        
+    <!-- 👉 THÊM 2 NÚT FIREBASE VÀO ĐÂY -->
+    <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:10px 0;">
+        <button class="btn btn-sm" onclick="backupAllData()">💾 Backup</button>
+        <button class="btn btn-sm" onclick="restoreAllData()">📂 Restore</button>
+    </div>
+      <div class="manage-layout">
+        <div>
+          <h3>📋 Nhóm công việc <span class="muted" id="groupCount">0 nhóm</span></h3>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+            <input id="newGroupName" type="text" placeholder="Tên nhóm..." style="flex:1" />
+            <input id="newGroupColor" type="color" value="#d1d5db" style="width:38px;height:38px;padding:2px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer" />
+            <button class="btn btn-primary btn-sm" id="addGroupBtn">+ Thêm</button>
+          </div>
+          <div class="groups-frames" id="groupsWrap"></div>
+          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm" id="exportGroups">📥 Xuất nhóm</button>
+            <input id="importGroups" type="file" accept=".json" style="display:none" />
+            <button class="btn btn-sm" id="importGroupsBtn">📤 Nhập nhóm</button>
+            <button class="btn btn-sm btn-danger" id="resetGroups">🔄 Reset nhóm</button>
+            
+          </div>
+        </div>
+        <aside class="side-panel">
+          <!-- Employee management -->
+          <div class="panel">
+            <h3>👥 Nhân viên</h3>
+            <div style="display:flex;gap:6px">
+              <input id="empName" type="text" placeholder="Tên nhân viên..." style="flex:1" />
+              <button class="btn btn-primary btn-sm" id="addEmpBtn">+ Thêm</button>
+            </div>
+            <div style="margin-top:8px">
+              <input id="importEmpFile" type="file" accept=".csv,.txt" style="display:none" />
+              <div id="uploadArea" class="upload-area" onclick="document.getElementById('importEmpFile').click()">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text">Nhấn để chọn file CSV</div>
+                <div class="upload-hint">Lưu file Excel thành CSV trước khi import</div>
+              </div>
+              <div id="fileInfo" class="file-info" style="display:none">
+                <span>📄</span><span class="file-name" id="fileName"></span>
+                <span class="file-remove" onclick="removeFile()">✕</span>
+              </div>
+              <div id="importProgress" class="import-progress">⏳ Đang đọc...</div>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-sm btn-primary" id="importEmpBtn" disabled>📥 Import</button>
+              <button class="btn btn-sm btn-danger" id="clearAllEmp">🗑 Xóa hết</button>
+              <span class="muted" id="empCount">0 NV</span>
+            </div>
+            <div style="margin-top:6px;">
+              <button class="btn btn-sm" onclick="checkSyncStatus()" title="Kiểm tra trạng thái đồng bộ dữ liệu ẩn" style="background:#10b981;color:white;border:none;width:100%;">
+                🔄 Kiểm tra đồng bộ
+              </button>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+            </div>
+            <div class="list" id="empList" style="margin-top:6px"></div>
+          </div>
+          <!-- Shift management -->
+          <div class="panel">
+            <h3>🕐 Ca làm việc</h3>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input id="shiftName" type="text" placeholder="Tên ca" style="flex:1" />
+              <input id="shiftTime" type="text" placeholder="Giờ" style="width:100px" />
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input id="shiftIcon" type="text" placeholder="Icon" style="width:50px" value="🔹" />
+              <button class="btn btn-primary btn-sm" id="addShiftBtn" style="flex:1">+ Thêm</button>
+            </div>
+            <div class="list" id="shiftList" style="margin-top:6px"></div>
+          </div>
+          <!-- Audit log -->
+          <div class="panel">
+            <h3>📝 Nhật ký</h3>
+            <div class="audit" id="auditLog"></div>
+            <button class="btn btn-sm btn-danger" id="clearAudit" style="margin-top:6px;width:100%">🗑 Xóa log</button>
+          </div>
+        </aside>
+      </div>
+      <div id="backupSection" style="display:none; margin-top:20px; padding:16px; background:#f8fafc; border-radius:12px; border:1px solid #e5e7eb;">
+        <h4 style="margin:0 0 12px 0;">💾 Sao lưu & Phục hồi</h4>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="backupAllData()" style="background:#10b981; color:white; border:none; padding:10px 16px;">💾 Sao lưu dữ liệu</button>
+          <button class="btn btn-sm" onclick="restoreAllData()" style="background:#f59e0b; color:white; border:none; padding:10px 16px;">📥 Phục hồi dữ liệu</button>
+          <button class="btn btn-sm" onclick="uploadToGithub()" style="background:#3b82f6; color:white; border:none; padding:10px 16px;">📤 Upload lên GitHub</button>
+        </div>
+        <p style="font-size:12px; color:#64748b; margin-top:8px;">
+          💡 Sao lưu: Tải file JSON về máy | Phục hồi: Chọn file JSON để khôi phục | Upload: Đưa dữ liệu lên GitHub cho nhân viên
+        </p>
+      </div>
+    </section>
+
+    <!-- Edit Group Modal -->
+    <div id="editGroupModal" class="edit-modal-backdrop">
+      <div class="edit-modal">
+        <h3>✏️ Sửa nhóm chấm công</h3>
+        <div class="modal-body">
+          <label style="font-weight:500; margin-bottom:4px; display:block;">📅 Ngày chấm công</label>
+          <input type="date" id="modalDate" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; margin-bottom:12px;" />
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">👥 Nhân viên</div>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="modalEmpInput" placeholder="Nhập tên để thêm nhân viên..." autocomplete="off" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;" />
+            <input type="number" id="modalInsertPosition" placeholder="Vị trí" min="1" inputmode="numeric" style="width:80px; padding:10px; border:1px solid #e5e7eb; border-radius:8px;" />
+            <div id="modalEmpAutocomplete" class="autocomplete-list"></div>
+          </div>
+          <div class="modal-emp-tags" id="modalEmpTags"></div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">🕐 Ca làm việc</div>
+          <div id="modalShiftGrid" class="shift-grid"></div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">🍚 Ăn cơm</div>
+          <div style="display:flex;gap:16px;">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+              <input type="radio" name="modalEat" value="Có" checked /> ✅ Có
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+              <input type="radio" name="modalEat" value="Không" /> ❌ Không
+            </label>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">📋 Công việc</div>
+          <div id="modalGroupsCompact" class="groups-compact"></div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">📝 Ghi chú</div>
+          <textarea id="modalNote" class="note-input" placeholder="Nhập ghi chú..." maxlength="500" style="width:100%;min-height:60px;"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="copyGroupToAnotherDate()" style="background:#39b63f; color:white;">📅 Copy ngày</button>
+          <button class="btn" onclick="closeEditModal()">❌ Hủy</button>
+          <button class="btn btn-danger" onclick="deleteGroupFromModal()">🗑 Xóa</button>
+          <button class="btn btn-primary" onclick="saveGroupFromModal()">💾 Lưu</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Dialog -->
+  <div id="__customDialogBackdrop" class="custom-dialog-backdrop">
+    <div class="custom-dialog">
+      <h4 id="__cdTitle"></h4>
+      <div class="body" id="__cdBody"></div>
+      <div id="__cdInputWrap" style="display:none"><input id="__cdInput" type="text" /></div>
+      <div class="controls" id="__cdControls"></div>
+    </div>
+  </div>
+
+  <!-- Note Popup -->
+  <div id="notePopup" class="note-popup"></div>
+
+  <script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(function() { console.log('✅ Service Worker đã đăng ký'); })
+        .catch(function(e) { console.error('❌ Lỗi SW:', e); });
+}
+</script>
+  <!-- JavaScript -->
+  <script src="app.js?v=333"></script>
+</body>
+</html>
