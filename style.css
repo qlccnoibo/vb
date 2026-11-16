@@ -1927,13 +1927,11 @@ select:focus {
   }
 }
 
-/* ===== ADMIN ONLY ===== 
-.admin-only {
-    display: none; /* Mặc định ẩn với nhân viên 
-} */
+/* ===== ADMIN ONLY ===== */
+body:not(.admin-mode) .admin-only { display: none !important; }
 
 /* ===== HIDDEN SECTIONS ===== */
-#backupSection {
+body:not(.admin-mode) #backupSection {
   display: none !important;
 }
 

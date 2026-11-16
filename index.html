@@ -12,7 +12,6 @@
   <!-- CSS -->
   <link rel="stylesheet" href="style.css">
   <!-- PWA -->
-  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2563eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -36,7 +35,7 @@
     <button id="tabQuanLy" class="admin-only" type="button">⚙️ Quản lý</button>
     
     <!-- Đoạn thêm dấu cho nút Update-->
-   <div class="employee-only" style="position: relative; display: inline-flex; align-items: center; margin-left: 8px;">
+   <div class="employee-only" style="display:none !important; position: relative; display: inline-flex; align-items: center; margin-left: 8px;">
     <button onclick="forceUpdateFromFirebase()" style="background:#3b82f6; color:white; border:none; border-radius:6px; padding:8px 12px; font-size:13px; font-weight: 700; cursor:pointer; display: flex; align-items: center; justify-content: center; height: 100%;">
         🔄 Update data
     </button>
@@ -61,7 +60,7 @@
     </div>
   <main class="container">
     <!-- Page: Chấm công -->
-    <section id="pageChamCong" class="card">
+    <section id="pageChamCong" class="card" style="display:none">
       <h2>🕒 Chấm công</h2>
       <form id="attendanceForm" autocomplete="off">
         <label>👤 Nhân viên <span class="muted" id="selectedCount">(0 đã chọn)</span></label>
@@ -117,7 +116,7 @@
     </section>
 
     <!-- Page: Thống kê -->
-    <section id="pageThongKe" class="card" style="display:none">
+    <section id="pageThongKe" class="card" style="display:block">
       <h2>📊 Thống kê chấm công</h2>
       <div id="statsContent"></div>
     </section>
@@ -142,7 +141,7 @@
     <!-- 👉 THÊM 2 NÚT FIREBASE VÀO ĐÂY -->
     <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:10px 0;">
         <button class="btn btn-sm" onclick="backupAllData()">💾 Backup</button>
-        <button class="btn btn-sm" onclick="restoreAllData()">📂 Restore</button>
+        <button class="btn btn-sm" onclick="restoreAllData()">🔎 Kiểm tra Restore</button>
     </div>
       <div class="manage-layout">
         <div>
@@ -221,7 +220,7 @@
         <h4 style="margin:0 0 12px 0;">💾 Sao lưu & Phục hồi</h4>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn btn-sm" onclick="backupAllData()" style="background:#10b981; color:white; border:none; padding:10px 16px;">💾 Sao lưu dữ liệu</button>
-          <button class="btn btn-sm" onclick="restoreAllData()" style="background:#f59e0b; color:white; border:none; padding:10px 16px;">📥 Phục hồi dữ liệu</button>
+          <button class="btn btn-sm" onclick="restoreAllData()" style="background:#f59e0b; color:white; border:none; padding:10px 16px;">🔎 Kiểm tra file khôi phục</button>
           <button class="btn btn-sm" onclick="uploadToGithub()" style="background:#3b82f6; color:white; border:none; padding:10px 16px;">📤 Upload lên GitHub</button>
         </div>
         <p style="font-size:12px; color:#64748b; margin-top:8px;">
@@ -294,13 +293,9 @@
   <div id="notePopup" class="note-popup"></div>
 
   <script>
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-        .then(function() { console.log('✅ Service Worker đã đăng ký'); })
-        .catch(function(e) { console.error('❌ Lỗi SW:', e); });
-}
+// Service worker disabled: sw.js is not included in this package.
 </script>
   <!-- JavaScript -->
-  <script src="app.js?v=333"></script>
+  <script src="app.js?v=production-ui-fix3"></script>
 </body>
 </html>
