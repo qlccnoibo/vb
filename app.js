@@ -4876,7 +4876,7 @@ async function init() {
 var statusDiv = document.createElement('div');
 statusDiv.id = 'fbStatus';
 statusDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; background:#3b82f6; color:white; padding:8px; font-size:12px; z-index:99999; text-align:center; font-weight:bold;';
-statusDiv.textContent = '⏳ Đang tải dữ liệu từ Supabase...';
+statusDiv.textContent = '⏳ Đang tải dữ liệu từ máy chủ...';
 document.body.appendChild(statusDiv);
 
 
