@@ -80,7 +80,20 @@ var PaginationManager = {
 };
 
 // ==================== UTILITY FUNCTIONS ====================
+// Mobile quota fix: attendance records are kept in runtime memory, not localStorage.
+// Supabase remains the authoritative store; reload fetches a fresh copy.
+var _runtimeRecordsCache = null;
+function setRuntimeRecords(records) {
+  if (!Array.isArray(records)) throw new Error('Danh sách bản ghi không hợp lệ.');
+  _runtimeRecordsCache = records;
+  return records;
+}
+function getRuntimeRecords() {
+  return L(REC_KEY, []);
+}
+
 function L(k, f) {
+  if (k === REC_KEY && _runtimeRecordsCache !== null) return _runtimeRecordsCache;
   try {
     var r = localStorage.getItem(k);
     return r ? JSON.parse(r) : JSON.parse(JSON.stringify(f));
@@ -202,7 +215,7 @@ async function deleteSingleAttendanceRecord(id) {
   try {
     await deleteRecordById(id);
     var remaining = L(REC_KEY, []).filter(function(r) { return r.id !== id; });
-    localStorage.setItem(REC_KEY, JSON.stringify(remaining));
+    setRuntimeRecords(remaining);
     window._statsData = remaining;
     log('Xóa bản ghi theo ID: ' + id);
     return true;
@@ -2002,7 +2015,7 @@ try {
     await saveNewAttendanceRecords(newAttendanceRecords);
 
     // Chỉ cập nhật localStorage sau khi Supabase lưu thành công
-    localStorage.setItem(REC_KEY, JSON.stringify(rec));
+    setRuntimeRecords(rec);
 } catch (e) {
     console.error('Không thể hoàn tất lưu chấm công:', e);
     alert('Không thể lưu chấm công lên Supabase: ' +
@@ -4468,7 +4481,7 @@ async function clearAllRecords() {
     var allIds = allRecords.map(function(r) { return r.id; });
     await deleteMultipleRecords(allIds);
     
-    localStorage.setItem('r', JSON.stringify([]));
+    setRuntimeRecords([]);
     log('Xóa tất cả bản ghi');
     renderStatistics();
     await showAlert('✅ Đã xóa ' + allIds.length + ' bản ghi!');
@@ -4647,7 +4660,7 @@ window.uploadToGithub = function() {
   var fullData = {
     employees: JSON.parse(localStorage.getItem('e') || '[]'),
     groups: JSON.parse(localStorage.getItem('g') || '[]'),
-    records: JSON.parse(localStorage.getItem('r') || '[]')
+    records: getRuntimeRecords()
   };
   var jsonStr = JSON.stringify(fullData);
   var blob = new Blob([jsonStr], { type: 'application/json' });
@@ -4729,7 +4742,7 @@ window.searchRecords = async function() {
         return;
       }
       recAll.splice(idx, 1);
-      localStorage.setItem('r', JSON.stringify(recAll));
+      setRuntimeRecords(recAll);
       log('Xóa bản ghi: ' + sel.employee + ' - ' + formatDate(sel.date));
       await showAlert('✅ Đã xóa!');
       renderStatistics();
@@ -4795,7 +4808,7 @@ async function syncFromSheets() {
           }
         }
       });
-      localStorage.setItem(REC_KEY, JSON.stringify(recData));
+      setRuntimeRecords(recData);
     }
     console.log('✅ Đã tải: ' + (empData ? empData.length : 0) + ' NV, ' + (recData ? recData.length : 0) + ' bản ghi');
   } catch (e) {
@@ -5002,7 +5015,7 @@ if (groupRes.data && groupRes.data.length > 0) {
             return record;
         });
 
-        localStorage.setItem('r', JSON.stringify(mappedRecs));
+        setRuntimeRecords(mappedRecs);
         console.log('✅ Đã tải ' + mappedRecs.length + ' bản ghi từ Supabase');
     }
 
@@ -5019,18 +5032,19 @@ if (groupRes.data && groupRes.data.length > 0) {
     if (isAdmin) {
         emp = loadedEmployees;
     } else {
-        var hiddenIds = [];
-
-        try {
-            hiddenIds = JSON.parse(
-                localStorage.getItem('hidden_emps') || '[]'
-            );
-        } catch (e) {
-            hiddenIds = [];
-        }
-
-        emp = loadedEmployees.filter(function(e) {
-            return hiddenIds.indexOf(e.id) === -1;
+        // Guest must NOT fetch the full employees table: derive suggestions only
+        // from public_attendance_records already returned for this guest.
+        // Never persist the derived names to localStorage.
+        var guestNames = new Set();
+        L(REC_KEY, []).forEach(function(record) {
+            if (record && typeof record.employee === 'string' && record.employee.trim()) {
+                guestNames.add(record.employee.trim());
+            }
+        });
+        emp = Array.from(guestNames).sort(function(a, b) {
+            return a.localeCompare(b, 'vi');
+        }).map(function(name, index) {
+            return { id: 'guest-visible-' + index, name: name };
         });
     }
 
@@ -5389,7 +5403,7 @@ window.copyGroupToAnotherDate = async function() {
     });
     try {
       await saveNewAttendanceRecords(newlyCopied);
-      localStorage.setItem(REC_KEY, JSON.stringify(allRecords));
+      setRuntimeRecords(allRecords);
     } catch (err) {
       await showAlert('Copy thất bại, chưa cập nhật dữ liệu cục bộ: ' + err.message);
       return;
@@ -5976,7 +5990,7 @@ function isHiddenEmployee(empName) {
 }
 
 window.checkData = function() {
-    var records = JSON.parse(localStorage.getItem('r') || '[]');
+    var records = getRuntimeRecords();
     var employees = JSON.parse(localStorage.getItem('e') || '[]');
     var groups = JSON.parse(localStorage.getItem('g') || '[]');
     
@@ -6012,7 +6026,7 @@ document.addEventListener('change', function(e) {
 
 // Hàm tự động dọn dẹp dữ liệu cũ trên máy (Chỉ giữ 4 tháng gần nhất)
 window.autoCleanOldData = function() {
-    var currentRecs = JSON.parse(localStorage.getItem('r') || '[]');
+    var currentRecs = getRuntimeRecords();
     if (currentRecs.length === 0) return;
 
     var cutoffDate = new Date();
@@ -6026,7 +6040,7 @@ window.autoCleanOldData = function() {
 
     // Nếu số lượng bản ghi bị giảm đi (có dữ liệu cũ bị xóa)
     if (trimmedRecs.length < currentRecs.length) {
-        localStorage.setItem('r', JSON.stringify(trimmedRecs));
+        setRuntimeRecords(trimmedRecs);
         console.log('🧹 Đã tự động dọn dẹp! Đã xóa ' + (currentRecs.length - trimmedRecs.length) + ' bản ghi cũ. Còn lại: ' + trimmedRecs.length);
     }
 };
@@ -6063,7 +6077,7 @@ window.forceUpdateFromFirebase = async function() {
         var mappedRecs = recRes.data.map(function(r) {
             return { id: r.id, employee: r.employee_name, date: r.date, shift: r.shift, eat: r.eat, tasks: r.tasks, note: r.note, timestamp: r.timestamp, sortOrder: r.sort_order };
         });
-        localStorage.setItem('r', JSON.stringify(mappedRecs));
+        setRuntimeRecords(mappedRecs);
 
         if (typeof refreshAllUI === 'function') refreshAllUI();
         var badge = document.getElementById('updateBadge');
@@ -6087,7 +6101,7 @@ supabaseClient
     if (false) {
         // STAGING: guest record payload disabled pending privacy-safe API.
         // 👉 Cập nhật trực tiếp vào LocalStorage mà không cần tải lại toàn bộ data
-        var currentRecs = JSON.parse(localStorage.getItem('r') || '[]');
+        var currentRecs = getRuntimeRecords();
         
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // Nếu là thêm mới hoặc sửa
@@ -6117,7 +6131,7 @@ supabaseClient
         }
         
         // Lưu lại vào máy
-        localStorage.setItem('r', JSON.stringify(currentRecs));
+        setRuntimeRecords(currentRecs);
         
         // Vẽ lại giao diện (Lần này sẽ mượt hơn rất nhiều vì không phải chờ API)
         if (typeof rEmp === 'function') rEmp();
