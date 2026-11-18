@@ -102,6 +102,63 @@ function L(k, f) {
   }
 }
 
+// IndexedDB Preview V1: cache ONLY rows returned by the guest-safe view.
+// Admin rows are NEVER persisted to IndexedDB. On any storage error fall back to network.
+var GUEST_CACHE_DB = 'chamcong-v4-guest-preview-cache-v1';
+var GUEST_CACHE_STORE = 'snapshots';
+var GUEST_CACHE_KEY = SUPABASE_URL + '|public_attendance_records|v1';
+var GUEST_CACHE_MAX_AGE = 12 * 60 * 60 * 1000; // 12 hours
+var GUEST_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+function openGuestCacheDB() {
+  return new Promise(function(resolve, reject) {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB unavailable')); return; }
+    var request = indexedDB.open(GUEST_CACHE_DB, 1);
+    request.onupgradeneeded = function() {
+      var db = request.result;
+      if (!db.objectStoreNames.contains(GUEST_CACHE_STORE)) db.createObjectStore(GUEST_CACHE_STORE);
+    };
+    request.onsuccess = function() { resolve(request.result); };
+    request.onerror = function() { reject(request.error || new Error('Cannot open IndexedDB')); };
+    request.onblocked = function() { reject(new Error('IndexedDB blocked')); };
+  });
+}
+async function readGuestSnapshot() {
+  var db = await openGuestCacheDB();
+  try {
+    return await new Promise(function(resolve, reject) {
+      var tx = db.transaction(GUEST_CACHE_STORE, 'readonly');
+      var req = tx.objectStore(GUEST_CACHE_STORE).get(GUEST_CACHE_KEY);
+      req.onsuccess = function() { resolve(req.result || null); };
+      req.onerror = function() { reject(req.error || new Error('Cache read failed')); };
+    });
+  } finally { db.close(); }
+}
+async function writeGuestSnapshot(records) {
+  if (!Array.isArray(records)) return false;
+  var snapshot = { savedAt: Date.now(), records: records, key: GUEST_CACHE_KEY };
+  // Limit oversized snapshots to avoid quota exceptions on restrictive mobile browsers.
+  if (new Blob([JSON.stringify(snapshot)]).size > GUEST_CACHE_MAX_BYTES) return false;
+  var db = await openGuestCacheDB();
+  try {
+    await new Promise(function(resolve, reject) {
+      var tx = db.transaction(GUEST_CACHE_STORE, 'readwrite');
+      tx.objectStore(GUEST_CACHE_STORE).put(snapshot, GUEST_CACHE_KEY);
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function() { reject(tx.error || new Error('Cache write failed')); };
+      tx.onabort = function() { reject(tx.error || new Error('Cache write aborted')); };
+    });
+    return true;
+  } finally { db.close(); }
+}
+function setGuestEmployeeSuggestions(records) {
+  var names = new Set();
+  records.forEach(function(rec) {
+    if (rec && typeof rec.employee === 'string' && rec.employee.trim()) names.add(rec.employee.trim());
+  });
+  emp = Array.from(names).sort(function(a,b) { return a.localeCompare(b, 'vi'); })
+    .map(function(name, index) { return { id: 'guest-visible-' + index, name: name }; });
+}
+
 // Lấy ngày hôm nay theo giờ Việt Nam (UTC+7), format YYYY-MM-DD
 function todayVN() {
   var now = new Date();
@@ -4879,6 +4936,27 @@ statusDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; background:#3
 statusDiv.textContent = '⏳ Đang tải dữ liệu từ máy chủ...';
 document.body.appendChild(statusDiv);
 
+// First paint from a recent guest-only snapshot, then always revalidate online.
+// Keep the Admin path cache-free to prevent privilege-mixed records.
+var displayedGuestSnapshot = false;
+if (!isAdmin) {
+    try {
+        var snapshot = await readGuestSnapshot();
+        if (snapshot && snapshot.key === GUEST_CACHE_KEY &&
+            Array.isArray(snapshot.records) &&
+            Date.now() - snapshot.savedAt >= 0 &&
+            Date.now() - snapshot.savedAt <= GUEST_CACHE_MAX_AGE) {
+            setRuntimeRecords(snapshot.records);
+            setGuestEmployeeSuggestions(snapshot.records);
+            displayedGuestSnapshot = true;
+            statusDiv.textContent = '📦 Đang hiển thị dữ liệu đã lưu (' +
+                new Date(snapshot.savedAt).toLocaleString('vi-VN') + ') — kiểm tra cập nhật...';
+            if (typeof refreshAllUI === 'function') refreshAllUI();
+        }
+    } catch (cacheError) {
+        console.info('Không đọc được IndexedDB, sẽ tải trực tiếp Supabase:', cacheError);
+    }
+}
 
 Promise.all([
     isAdmin ? supabaseClient.from('employees').select('*') : Promise.resolve({data:[],error:null}),
@@ -5016,6 +5094,12 @@ if (groupRes.data && groupRes.data.length > 0) {
         });
 
         setRuntimeRecords(mappedRecs);
+        // Guest-only snapshot. Failure to cache never interrupts rendering.
+        if (!isAdmin) {
+            writeGuestSnapshot(mappedRecs).catch(function(cacheError) {
+                console.info('Không lưu được IndexedDB; lần sau sẽ tải lại:', cacheError);
+            });
+        }
         console.log('✅ Đã tải ' + mappedRecs.length + ' bản ghi từ Supabase');
     }
 
@@ -5035,17 +5119,7 @@ if (groupRes.data && groupRes.data.length > 0) {
         // Guest must NOT fetch the full employees table: derive suggestions only
         // from public_attendance_records already returned for this guest.
         // Never persist the derived names to localStorage.
-        var guestNames = new Set();
-        L(REC_KEY, []).forEach(function(record) {
-            if (record && typeof record.employee === 'string' && record.employee.trim()) {
-                guestNames.add(record.employee.trim());
-            }
-        });
-        emp = Array.from(guestNames).sort(function(a, b) {
-            return a.localeCompare(b, 'vi');
-        }).map(function(name, index) {
-            return { id: 'guest-visible-' + index, name: name };
-        });
+        setGuestEmployeeSuggestions(L(REC_KEY, []));
     }
 
     if (typeof refreshAllUI === 'function') refreshAllUI();
@@ -5053,8 +5127,10 @@ if (groupRes.data && groupRes.data.length > 0) {
     if (typeof renderStatistics === 'function') renderStatistics();
 
 }).catch(function(e) {
-    statusDiv.style.background = '#ef4444';
-    statusDiv.textContent = '❌ Lỗi tải dữ liệu Supabase: ' + e.message;
+    statusDiv.style.background = displayedGuestSnapshot ? '#b45309' : '#ef4444';
+    statusDiv.textContent = displayedGuestSnapshot
+        ? '⚠️ Không cập nhật được Supabase — đang xem dữ liệu lưu trên máy (có thể đã cũ): ' + e.message
+        : '❌ Lỗi tải dữ liệu Supabase: ' + e.message;
     console.error('Lỗi tải Supabase:', e);
 });
 
